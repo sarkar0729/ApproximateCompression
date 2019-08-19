@@ -44,15 +44,20 @@ uint32_t end;
 uint32_t output_size;
 uint32_t byte_count;
 
-	fp1 = fopen(argv[1], "r");
-	if (fp1 == NULL) {
-		fprintf(stderr, "Could not open input file\n");
+	if (argc != 3) {
+		fprintf(stderr, "Usage: compressFloat <floating point file> <compressed binary file>\n");
 		exit(EXIT_FAILURE);
 	}
 
-	fp2 = fopen(argv[2], "w");
+	fp1 = fopen(argv[1], "rb");
+	if (fp1 == NULL) {
+		fprintf(stderr, "Could not open input file %s\n", argv[1]);
+		exit(EXIT_FAILURE);
+	}
+
+	fp2 = fopen(argv[2], "wb");
 	if (fp2 == NULL) {
-		fprintf(stderr, "Could not open output file\n");
+		fprintf(stderr, "Could not open output file %s\n", argv[2]);
 		exit(EXIT_FAILURE);
 	}
 
@@ -68,7 +73,7 @@ uint32_t byte_count;
 		input[elem_count++] = val;
 	}
 
-	printf("Input file has %d floating point numbers\n", elem_count);
+	printf("Input file %s has %d floating point numbers\n", argv[1], elem_count);
 
 	compressed_buffer = compress_float(elem_count, input);
 	if (compressed_buffer == NULL) {
@@ -85,7 +90,7 @@ uint32_t byte_count;
 		exit(EXIT_FAILURE);
 	};
 
-	printf("Sucessfully generated compressed output file of size %d bytes\n", output_size);
+	printf("Sucessfully generated compressed output file %s of size %d bytes\n", argv[2], output_size);
 
 	fclose(fp1);
 	fclose(fp2);

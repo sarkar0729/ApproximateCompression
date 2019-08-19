@@ -4,7 +4,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "utils.h"
+#include "bitUtils.h"
 #include "uint8.h"
 
 #define DEBUG 0
@@ -112,6 +112,9 @@ uint8_encode(uint8_t encode_key, uint16_t len, uint8_t *buf, uint8_t *encoded_bu
 		}
 }
 
+// RESOLVE: Lot of duplication in the uint8_encode_XXXX functions,
+// needs to be cleaned up later
+
 // Encode input buffer when the encode key is 1 | 2 | 3
 void
 uint8_encode_1_2_3(uint8_t encode_key, uint16_t len, uint8_t *buf, uint8_t *encoded_buf)
@@ -141,40 +144,40 @@ uint16_t *p_val16;
 	for (int i = 1; i < len; i++) {
 		delta = buf[i] - buf[i - 1];
 		switch(delta){
-			case 0: clear_bit(encoded_buf, encoded_buf_idx);
+			case 0: // Append 0
+					clear_bit(encoded_buf, encoded_buf_idx);
 					encoded_buf_idx++;
 					break;
 			case 1: 
 					if (encode_key == 1 || encode_key == 2) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else { 
 						// encode_key == 3
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					}
 					break;
 			case (-1): 
 					if (encode_key == 1) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else if (encode_key == 2) {
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					} else {
 						// encode_key == 3
+						// Append 01
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
@@ -182,24 +185,14 @@ uint16_t *p_val16;
 					}
 					break;
 			case 2: // Append bits 1110
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b0111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 4, value);
+					encoded_buf_idx += 4;
 					break;
 			case (-2): // Append bits 1111
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b1111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 4, value);
+					encoded_buf_idx += 4;
 					break;
 			default: 
 					printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
@@ -261,30 +254,28 @@ uint16_t *p_val16;
 					break;
 			case 1: 
 					if (encode_key == 4) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else { 
 						// encode_key == 5
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					}
 					break;
 			case (-1): 
 					if (encode_key == 4) {
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					} else {
 						// encode_key == 5
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
@@ -292,52 +283,24 @@ uint16_t *p_val16;
 					}
 					break;
 			case 2: // Append bits 11100
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b00111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			case (-2): // Append bits 11101
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b10111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			case 3: // Append bits 11110
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b01111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			case (-3): // Append bits 11111
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b11111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			default: 
 					printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
@@ -402,30 +365,28 @@ uint16_t *p_val16;
 					break;
 			case 1: 
 					if (encode_key == 6 || encode_key ==8) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else { 
 						// encode_key == 7 || encode_key == 9
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					}
 					break;
 			case (-1): 
 					if (encode_key == 6 || encode_key ==8) {
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					} else {
 						// encode_key == 7 || encode_key == 9
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
@@ -433,158 +394,64 @@ uint16_t *p_val16;
 					}
 					break;
 			case 2: // Append bits 11100
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b00111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			case (-2): // Append bits 11101
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b10111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
+					encoded_buf_idx += 5;
 					break;
 			case 3: // Append bits 111100
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b001111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
+					encoded_buf_idx += 6;
 					break;
 			case (-3): // Append bits 111101
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b101111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
+					encoded_buf_idx += 6;
 					break;
 			case 4: 
 					if (encode_key == 6 || encode_key == 7) {
-					// Append bits 111110
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+						// Append bits 111110
+						value = 0b011111;
+						write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
+						encoded_buf_idx += 6;
 					} else {
-					// encode_key == 8 || encode_key == 9
-					// Append bits 1111100
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+						// encode_key == 8 || encode_key == 9
+						// Append bits 1111100
+						value = 0b0011111;
+						write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+						encoded_buf_idx += 7;
 					}
 					break;
 			case (-4):
 					if (encode_key == 6 || encode_key == 7) {
-					// Append bits 111111
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+						// Append bits 111111
+						value = 0b111111;
+						write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
+						encoded_buf_idx += 6;
 					} else {
-					// encode_key == 8 || encode_key == 9
-					// Append bits 1111101
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+						// encode_key == 8 || encode_key == 9
+						// Append bits 1111101
+						value = 0b1011111;
+						write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+						encoded_buf_idx += 7;
 					}
 					break;
 			case 5: 
 					// Append bits 1111110
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					clear_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b0111111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+					encoded_buf_idx += 7;
 					break;
 			case -5: 
 					// Append bits 1111111
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
-					set_bit(encoded_buf, encoded_buf_idx);
-					encoded_buf_idx++;
+					value = 0b1111111;
+					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+					encoded_buf_idx += 7;
 					break;
 			default: 
 					printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
@@ -649,41 +516,41 @@ uint16_t *p_val16;
 					break;
 			case 1: 
 					if (encode_key == 10 || encode_key == 12) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else { 
 						// encode_key == 11 or encode_key == 13
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-					}
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
+					} 
 					break;
 			case (-1): 
 					if (encode_key == 10 || encode_key == 12) {
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					} else {
 						// encode_key == 11 or encode_key == 13
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					}
 					break;
-			case 2: value = 0b00111;
+			case 2: // Append 11100
+					value = 0b00111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
 					encoded_buf_idx += 5;
 					break;
-			case (-2): value = 0b10111;
+			case (-2): // Append 11101
+					value = 0b10111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
 					encoded_buf_idx += 5;
 					break;
@@ -761,64 +628,64 @@ uint16_t *p_val16;
 					break;
 			case 1: 
 					if (encode_key == 14 || encode_key == 16) {
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					} else { 
 						// encode_key == 15 || encode_key == 17
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					}
 					break;
 			case (-1): 
 					if (encode_key == 14 || encode_key == 16) {
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						set_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
-						clear_bit(encoded_buf, encoded_buf_idx);
-						encoded_buf_idx++;
+						// Append 110
+						value = 0b011;
+						write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+						encoded_buf_idx += 3;
 					} else {
 						// encode_key == 15 || encode_key == 17
+						// Append 10
 						set_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 						clear_bit(encoded_buf, encoded_buf_idx);
 						encoded_buf_idx++;
 					}
 					break;
-			case 2: value = 0b00111;
+			case 2: // Append 11100
+					value = 0b00111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
 					encoded_buf_idx += 5;
 					break;
-			case (-2): value = 0b10111;
+			case (-2): // Append 11101
+					value = 0b10111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 5, value);
 					encoded_buf_idx += 5;
 					break;
-			case 3: value = 0b001111;
+			case 3: // Append 111100
+					value = 0b001111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
 					encoded_buf_idx += 6;
 					break;
-			case (-3): value = 0b101111;
+			case (-3): // Append 111101
+					value = 0b101111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 6, value);
 					encoded_buf_idx += 6;
 					break;
-			case 4: value = 0b0011111;
+			case 4: // Append 1111100
+					value = 0b0011111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
 					encoded_buf_idx += 7;
 					break;
-			case (-4): value = 0b1011111;
+			case (-4): // Append 1111101
+					value = 0b1011111;
 					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
 					encoded_buf_idx += 7;
 					break;
-						value = (delta > 0) ? 0b01111 : 0b11111;
-						value += (abs(delta) - 3) << 5;
-						write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
-						encoded_buf_idx += 7;
 			default: 
 					value = (delta > 0) ? 0b0111111 : 0b1111111;
 					if (encode_key == 14 || encode_key == 15) {
@@ -904,6 +771,9 @@ uint8_decode(uint8_t encode_key, uint16_t batch_size, uint8_t *encoded_buffer, u
 		default: return (-1);
 	}
 }
+
+// RESOLVE: Lot of duplication in the uint8_encode_XXXX functions,
+// needs to be cleaned up later
 
 // Decode encoded buffer when the encode key is 1 | 2 | 3
 int

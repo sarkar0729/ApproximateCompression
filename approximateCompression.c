@@ -16,7 +16,7 @@
 
 // BLOCK_SIZE is the maximum size of data that can be compressed
 // without divided into multiple blocks
-#define BLOCK_SIZE (1024 * 1024)
+#define BLOCK_SIZE (256 * 1024)
 
 // Compressed FP array structure
 // Size of the compressed array in bytes uint32_t
@@ -69,7 +69,7 @@ float max;
 float *p_float;
 uint8_t *batch_ptr;
 uint8_t encoded_bucket[UINT16_MAX];
-uint8_t output_bucket[UINT16_MAX];
+uint8_t output_bucket[BLOCK_SIZE];
 uint8_t *output;
 uint16_t encoded_size;
 uint16_t batch_size;
@@ -205,9 +205,13 @@ uint32_t *p_val32;
 			min = input[start];
 		}
 
-		// RESOLVE: Add check for maximum batch size and presence of zero
-
 		for (int i = start + 2; i < elem_count; i++) {
+			// A batch can not be more than 65536
+			if (i >= start + UINT16_MAX) {
+				batch_size = i - start;
+				break;
+			}
+
 			if (input[i] == 0.0) {
 				batch_size = i - start;
 				break;
@@ -333,11 +337,11 @@ uint32_t *p_val32;
 */
 
 uint8_t *
-uncompress_float(uint8_t *input)
+decompress_float(uint8_t *input)
 {
 uint8_t encoded_buffer[UINT16_MAX];
 uint8_t decoded_buffer[UINT16_MAX];
-float uncompressed_buffer[UINT16_MAX];
+float uncompressed_buffer[BLOCK_SIZE];
 float min;
 float max;
 uint16_t batch_size;

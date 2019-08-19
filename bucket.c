@@ -4,7 +4,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "utils.h"
+#include "bitUtils.h"
 #include "bucket.h"
 #include "bucketArray.h"
 
