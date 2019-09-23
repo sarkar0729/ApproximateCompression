@@ -60,11 +60,10 @@
 //    Encoding 0, 10, 110, 11100, 11101, 111100, 111101, 1111100, 1111101, 1111110XXXX, 1111111XXXX
 // H: delta values 0, +1, -1, +2, -2, +3, -3, +4, -4, +5 .. +20, -5 .. -20 [count of -1 > count of +1]
 //    Encoding 0, 110, 10, 11100, 11101, 111100, 111101, 1111100, 1111101, 1111110XXXX, 1111111XXXX
-// I: delta values 0, +1, -1, +2, -2, +3, -3, +4 .. +19, -4 .. -19
-//    Encoding 000, 001, 010, 011, 100, 101, 110, 111, 1110XXXX, 1111XXXX
-//
+// 18: delta values 0, +1, -1, +2, -2, +3, -3, +4 .. +10, -4 .. -10, +11 .. +26, -11 .. -26
+//    Encoding 000, 001, 010, 011, 100, 101, 110, 1110XXX, 1111XXX, 1110111XXXX, 1111111XXXX
 
-#define DELTA_HIGH 20
+#define DELTA_HIGH 26
 
 //
 //  Input:
@@ -102,6 +101,8 @@ uint8_encode(uint8_t encode_key, uint16_t len, uint8_t *buf, uint8_t *encoded_bu
 		case 15:
 		case 16: 
 		case 17: uint8_encode_14_15_16_17(encode_key, len, buf, encoded_buf);
+				return;
+		case 18: uint8_encode_18(encode_key, len, buf, encoded_buf);
 				return;
 		default: 
 				printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
@@ -722,6 +723,125 @@ uint16_t *p_val16;
 	*p_val16 = encoded_buf_len;
 }
 
+// Encode input buffer when the encode key is 18
+void
+uint8_encode_18(uint8_t encode_key, uint16_t len, uint8_t *buf, uint8_t *encoded_buf)
+{
+uint32_t encoded_buf_idx;
+uint16_t encoded_buf_len;
+uint8_t *final_encoded_buf;
+uint64_t value;
+int16_t delta;
+uint16_t *p_val16;
+
+	// Set the length of encoded buffer uint16_t to zero
+	// Will be filled up later with correct values
+	encoded_buf[0] = 0;
+	encoded_buf[1] = 0;
+
+	// Set the following byte with the first bucket value
+	encoded_buf[2] = buf[0];
+
+	encoded_buf_idx = 24; // Points to the next bit position 
+
+	// 18: delta values 0, +1, -1, +2, -2, +3, -3, +4 .. +10, -4 .. -10, +11 .. +27, -11 .. -27
+	//     Encoding 000, 001, 010, 011, 100, 101, 110, 1110XXX, 1111XXX, 1110111XXXX, 1111111XXXX
+
+	value = buf[0];
+
+	for (int i = 1; i < len; i++) {
+		delta = buf[i] - buf[i - 1];
+		switch(delta){
+			case 0: // Append 000
+					value = 0b000;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case 1: // Append 001
+					value = 0b100;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case (-1): // Append 010
+					value = 0b010;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case 2: // Append 011
+					value = 0b110;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case (-2): // Append 100
+					value = 0b001;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case 3: // Append 101
+					value = 0b101;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case (-3): // Append 110
+					value = 0b011;
+					write_bitstream(encoded_buf, encoded_buf_idx, 3, value);
+					encoded_buf_idx += 3;
+					break;
+			case 4: case 5: case 6: case 7: case 8: case 9:
+			case 10: // Append 1110XXX
+					value = 0b0111;
+					value += (delta - 4) << 4;
+					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+					encoded_buf_idx += 7;
+					break;
+			case (-4): case (-5): case (-6): case (-7): case (-8): case (-9):
+			case (-10): // Append 1111XXX
+					value = 0b1111;
+					value += ((-delta) - 4) << 4;
+					write_bitstream(encoded_buf, encoded_buf_idx, 7, value);
+					encoded_buf_idx += 7;
+					break;
+			case 11: case 12: case 13: case 14: case 15: case 16: case 17: case 18:
+			case 19: case 20: case 21: case 22: case 23: case 24: case 25: case 26:
+					// Append 1110111XXXX
+					value = 0b1110111;
+					value += (delta - 11) << 7;
+					write_bitstream(encoded_buf, encoded_buf_idx, 11, value);
+					encoded_buf_idx += 11;
+					break;
+			case (-11): case (-12): case (-13): case (-14): case (-15): case (-16): case (-17): case (-18):
+			case (-19): case (-20): case (-21): case (-22): case (-23): case (-24): case (-25): case (-26):
+					// Append 1111111XXXX
+					value = 0b1111111;
+					value += ((-delta) - 11) << 7;
+					write_bitstream(encoded_buf, encoded_buf_idx, 11, value);
+					encoded_buf_idx += 11;
+					break;
+			default: 
+					printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
+					return;
+		}
+	}
+
+	if (DEBUG)
+		printf("Encoded bit count = %d\n", encoded_buf_idx);
+
+	// Check whether the last byte of encoded_buf is partially filled
+	// and clear the unfilled portion 
+	while ((encoded_buf_idx % 8) != 0) {
+		clear_bit(encoded_buf, encoded_buf_idx);
+		encoded_buf_idx++;
+	}
+
+	encoded_buf_len = encoded_buf_idx / 8;
+	if (DEBUG)
+		printf("Encoded buffer length = %d\n", encoded_buf_len);
+
+	// Patch the first word with the length of the buffer
+	p_val16 = (uint16_t *) encoded_buf;
+	*p_val16 = encoded_buf_len;
+}
+
 //
 //  Input:
 // 	encoded buffer: First two bytes contain the length of encoded bits
@@ -767,6 +887,8 @@ uint8_decode(uint8_t encode_key, uint16_t batch_size, uint8_t *encoded_buffer, u
 		case 15: 
 		case 16: 
 		case 17: return(uint8_decode_14_15_16_17(encode_key, batch_size, encoded_buffer, decoded_buffer));
+
+		case 18: return(uint8_decode_18(encode_key, batch_size, encoded_buffer, decoded_buffer));
 		
 		default: return (-1);
 	}
@@ -811,9 +933,7 @@ int val;
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
 				else {
 					// encode_key == 3
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				}
 
 				encoded_buffer_idx++;
@@ -821,9 +941,7 @@ int val;
 			} else {
 				// The first two bits are 11
 				if (encode_key == 1) {
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 
 					encoded_buffer_idx++;
 					continue;
@@ -833,9 +951,7 @@ int val;
 				if (get_bit(encoded_buffer, encoded_buffer_idx) == 0) {
 					// The first three bits are 110
 					if (encode_key == 2) {
-						val = decoded_buffer[i - 1];
-						val--;
-						decoded_buffer[i] = val;
+						decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 					} else {
 						// encode_key == 3
 						decoded_buffer[i] = decoded_buffer[i - 1] + 1;
@@ -850,10 +966,7 @@ int val;
 						decoded_buffer[i] = decoded_buffer[i - 1] + 2;
 					} else {
 						// The first four bits are 1111, delta = (-2)
-						val = decoded_buffer[i - 1];
-						val--;
-						val--;
-						decoded_buffer[i] = val;
+						decoded_buffer[i] = decoded_buffer[i - 1] - 2;
 					}
 					encoded_buffer_idx++;
 					continue;
@@ -903,9 +1016,7 @@ int bit4;
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
 				else {
 					// encode_key == 5
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				}
 
 				encoded_buffer_idx++;
@@ -916,9 +1027,7 @@ int bit4;
 				if (get_bit(encoded_buffer, encoded_buffer_idx) == 0) {
 					// The first three bits are 110
 					if (encode_key == 4) {
-						val = decoded_buffer[i - 1];
-						val--;
-						decoded_buffer[i] = val;
+						decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 					} else {
 						// encode_key == 5
 						decoded_buffer[i] = decoded_buffer[i - 1] + 1;
@@ -939,10 +1048,7 @@ int bit4;
 							decoded_buffer[i] = decoded_buffer[i - 1] + 2;
 						} else {
 							// The first five bits are 11101
-							val = decoded_buffer[i - 1];
-							val--;
-							val--;
-							decoded_buffer[i] = val;
+							decoded_buffer[i] = decoded_buffer[i - 1] - 2;
 						}
 					} else {
 						// The first four bits are 1111
@@ -951,9 +1057,7 @@ int bit4;
 							decoded_buffer[i] = decoded_buffer[i - 1] + 3;
 						} else {
 							// The first five bits are 11111
-							val = decoded_buffer[i - 1];
-							val -= 3;
-							decoded_buffer[i] = val;
+							decoded_buffer[i] = decoded_buffer[i - 1] - 3;
 						}
 					}
 					continue;
@@ -1005,9 +1109,7 @@ int bit7;
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
 				else {
 					// encode_key == 7 || encode_key == 9
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				}
 
 				encoded_buffer_idx++;
@@ -1018,9 +1120,7 @@ int bit7;
 				if (get_bit(encoded_buffer, encoded_buffer_idx) == 0) {
 					// The first three bits are 110
 					if (encode_key == 6 || encode_key == 8) {
-						val = decoded_buffer[i - 1];
-						val--;
-						decoded_buffer[i] = val;
+						decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 					} else {
 						// encode_key == 7 || encode_key == 9
 						decoded_buffer[i] = decoded_buffer[i - 1] + 1;
@@ -1041,10 +1141,7 @@ int bit7;
 							decoded_buffer[i] = decoded_buffer[i - 1] + 2;
 						} else {
 							// The first five bits are 11101
-							val = decoded_buffer[i - 1];
-							val--;
-							val--;
-							decoded_buffer[i] = val;
+							decoded_buffer[i] = decoded_buffer[i - 1] - 2;
 						}
 					} else {
 						// The first four bits are 1111
@@ -1057,9 +1154,7 @@ int bit7;
 								decoded_buffer[i] = decoded_buffer[i - 1] + 3;
 							} else {
 								// The first six bits are 111101
-								val = decoded_buffer[i - 1];
-								val -= 3;
-								decoded_buffer[i] = val;
+								decoded_buffer[i] = decoded_buffer[i - 1] - 3;
 							}
 						} else {
 							// The first five bits are 11111
@@ -1070,9 +1165,7 @@ int bit7;
 									decoded_buffer[i] = decoded_buffer[i - 1] + 4;
 								} else {
 									// The first six bits are 111111
-									val = decoded_buffer[i - 1];
-									val -= 4;
-									decoded_buffer[i] = val;
+									decoded_buffer[i] = decoded_buffer[i - 1] - 4;
 								}
 							} else {
 								// (encode_key == 8 || encode_key == 9)
@@ -1085,9 +1178,7 @@ int bit7;
 										decoded_buffer[i] = decoded_buffer[i - 1] + 4;
 									} else {
 										// The first seven bits are 1111101
-										val = decoded_buffer[i - 1];
-										val -= 4;
-										decoded_buffer[i] = val;
+										decoded_buffer[i] = decoded_buffer[i - 1] - 4;
 									}
 								} else {
 									// The first six bits are 111111
@@ -1096,9 +1187,7 @@ int bit7;
 										decoded_buffer[i] = decoded_buffer[i - 1] + 5;
 									} else {
 										// The first seven bits are 1111111
-										val = decoded_buffer[i - 1];
-										val -= 5;
-										decoded_buffer[i] = val;
+										decoded_buffer[i] = decoded_buffer[i - 1] - 5;
 									}
 								}
 							}
@@ -1149,9 +1238,7 @@ int val;
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
 				else {
 					// encode_key == 11 || encode_key == 13
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				}
 
 				encoded_buffer_idx++;
@@ -1162,9 +1249,7 @@ int val;
 				if (get_bit(encoded_buffer, encoded_buffer_idx) == 0) {
 					// The first three bits are 110
 				if (encode_key == 10 || encode_key == 12) {
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				} else {
 					// encode_key == 11 || encode_key == 13
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
@@ -1182,10 +1267,7 @@ int val;
 							decoded_buffer[i] = decoded_buffer[i - 1] + 2;
 						else {
 							// Found 11101
-							val = decoded_buffer[i - 1];
-							val--;
-							val--;
-							decoded_buffer[i] = val;
+							decoded_buffer[i] = decoded_buffer[i - 1] - 2;
 						}
 						encoded_buffer_idx++;
 						continue;
@@ -1282,9 +1364,7 @@ int bit7;
 					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
 				else {
 					// encode_key == 15 || encode_key == 17
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
+					decoded_buffer[i] = decoded_buffer[i - 1] - 1;
 				}
 
 				encoded_buffer_idx++;
@@ -1294,14 +1374,12 @@ int bit7;
 				encoded_buffer_idx++;
 				if (get_bit(encoded_buffer, encoded_buffer_idx) == 0) {
 					// The first three bits are 110
-				if (encode_key == 14 || encode_key == 16) {
-					val = decoded_buffer[i - 1];
-					val--;
-					decoded_buffer[i] = val;
-				} else {
-					// encode_key == 15 || encode_key == 17
-					decoded_buffer[i] = decoded_buffer[i - 1] + 1;
-				}
+					if (encode_key == 14 || encode_key == 16) {
+						decoded_buffer[i] = decoded_buffer[i - 1] - 1;
+					} else {
+						// encode_key == 15 || encode_key == 17
+						decoded_buffer[i] = decoded_buffer[i - 1] + 1;
+					}
 					encoded_buffer_idx++;
 					continue;
 				} else {
@@ -1315,10 +1393,7 @@ int bit7;
 							decoded_buffer[i] = decoded_buffer[i - 1] + 2;
 						else {
 							// Found 11101
-							val = decoded_buffer[i - 1];
-							val--;
-							val--;
-							decoded_buffer[i] = val;
+							decoded_buffer[i] = decoded_buffer[i - 1] - 2;
 						}
 						encoded_buffer_idx++;
 						continue;
@@ -1333,11 +1408,7 @@ int bit7;
 								decoded_buffer[i] = decoded_buffer[i - 1] + 3;
 							else {
 								// Found 111101
-								val = decoded_buffer[i - 1];
-								val--;
-								val--;
-								val--;
-								decoded_buffer[i] = val;
+								decoded_buffer[i] = decoded_buffer[i - 1] - 3;
 							}
 							encoded_buffer_idx++;
 							continue;
@@ -1352,12 +1423,7 @@ int bit7;
 									decoded_buffer[i] = decoded_buffer[i - 1] + 4;
 								else {
 									// Found 1111101
-									val = decoded_buffer[i - 1];
-									val--;
-									val--;
-									val--;
-									val--;
-									decoded_buffer[i] = val;
+									decoded_buffer[i] = decoded_buffer[i - 1] - 4;
 								}
 								encoded_buffer_idx++;
 								continue;
@@ -1395,6 +1461,91 @@ int bit7;
 							}
 						}
 					}
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+// Decode encoded buffer when the encode key is 14 | 15 | 16 | 17
+int
+uint8_decode_18(uint8_t encode_key, uint16_t batch_size, uint8_t *encoded_buffer, uint8_t *decoded_buffer)
+{
+uint32_t encoded_buffer_idx;
+uint64_t val64;
+uint8_t val8;
+uint16_t *p_val16;
+uint16_t encoded_buffer_size;
+int delta;
+int val;
+int bit4;
+
+	// Save the encoded length for diagnostics
+	p_val16 = (uint16_t *)encoded_buffer;
+	encoded_buffer_size = *p_val16++;
+	encoded_buffer = (uint8_t *)p_val16;
+
+	encoded_buffer_idx = 0;
+
+	// The first element is not encoded
+	decoded_buffer[0] = *encoded_buffer;
+	encoded_buffer_idx += 8;
+
+	// 18: delta values 0, +1, -1, +2, -2, +3, -3, +4 .. +10, -4 .. -10, +11 .. +26, -11 .. -26
+	//    Encoding 000, 001, 010, 011, 100, 101, 110, 1110XXX, 1111XXX, 1110111XXXX, 1111111XXXX
+	//
+	for (int i = 1; i < batch_size; i++) {
+		read_bitstream(encoded_buffer, encoded_buffer_idx, 3, &val64);
+		encoded_buffer_idx += 3;
+		if (val64 < 7) {
+			switch(val64){
+				case 0b000: decoded_buffer[i] = decoded_buffer[i - 1];
+						break;
+				case 0b100: decoded_buffer[i] = decoded_buffer[i - 1] + 1;
+						break;
+				case 0b010: decoded_buffer[i] = decoded_buffer[i - 1] - 1;
+						break;
+				case 0b110: decoded_buffer[i] = decoded_buffer[i - 1] + 2;
+						break;
+				case 0b001: decoded_buffer[i] = decoded_buffer[i - 1] - 2;
+						break;
+				case 0b101: decoded_buffer[i] = decoded_buffer[i - 1] + 3;
+						break;
+				case 0b011: decoded_buffer[i] = decoded_buffer[i - 1] - 3;
+						break;
+			}
+			continue;
+		} else { // val64 equals 7
+			bit4 = get_bit(encoded_buffer, encoded_buffer_idx);
+			encoded_buffer_idx++;
+			if (bit4 == 0) {
+				// The first four bits are 1110 , read 3 more bits
+				read_bitstream(encoded_buffer, encoded_buffer_idx, 3, &val64);
+				encoded_buffer_idx += 3;
+				if (val64 < 7) {
+					decoded_buffer[i] = decoded_buffer[i - 1] + (4 + val64);
+					continue;
+				} else { // val64 equals 7
+					// The first four bits are 1110111 , read 4 more bits
+					read_bitstream(encoded_buffer, encoded_buffer_idx, 4, &val64);
+					encoded_buffer_idx += 4;
+					decoded_buffer[i] = decoded_buffer[i - 1] + (11 + val64);
+					continue;
+				}
+			} else {
+				// The first four bits are 1111 , read 3 more bits
+				read_bitstream(encoded_buffer, encoded_buffer_idx, 3, &val64);
+				encoded_buffer_idx += 3;
+				if (val64 < 7) {
+					decoded_buffer[i] = decoded_buffer[i - 1] - (4 + val64);
+					continue;
+				} else { // val64 equals 7
+					// The first four bits are 1110111 , read 4 more bits
+					read_bitstream(encoded_buffer, encoded_buffer_idx, 4, &val64);
+					encoded_buffer_idx += 4;
+					decoded_buffer[i] = decoded_buffer[i - 1] - (11 + val64);
+					continue;
 				}
 			}
 		}

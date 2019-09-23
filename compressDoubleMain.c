@@ -9,9 +9,9 @@
 #define MAX_SIZE 65536
 
 /*
-** This program reads an input file containing floating point
-** numbers and generates a compressed file using the function
-** compress_float. It is a lossy compression with an average
+** This program reads an input file containing double precision 
+** floating point numbers and generates a compressed file using the 
+** function compress_double. It is a lossy compression with an average
 ** error of 0.5%. The maximum error is guaranteed to be below
 ** one percent. Typical size for time series data is about 6%
 ** of the original size
@@ -33,9 +33,9 @@ FILE * fp1;
 FILE * fp2;
 char *input_file;
 char *output_file;
-float val;
-float *p_val;
-float input[MAX_SIZE];
+double val;
+double *p_val;
+double input[MAX_SIZE];
 compressed_array compressed_buffer;
 uint8_t *batch_ptr;
 uint8_t accuracy;
@@ -61,7 +61,7 @@ uint32_t byte_count;
 		else if (strcmp(argv[1], "-H") == 0)
 			accuracy = ACCURACY_ONE_TENTH_PERCENT;
 		else {
-			fprintf(stderr, "Usage: compressFloat [-L|M|N] <floating point file> <compressed binary file>\n");
+			fprintf(stderr, "Usage: compressFloat [-L|M|N] <double precision floating point file> <compressed binary file>\n");
 			fprintf(stderr, "\t -L : Maximum error < 1%, Average error < 0.5%\n");
 			fprintf(stderr, "\t -M : Maximum error < 0.5%, Average error < 0.25%\n");
 			fprintf(stderr, "\t -H : Maximum error < 0.1%, Average error < 0.05%\n");
@@ -72,7 +72,7 @@ uint32_t byte_count;
 		output_file = argv[3];
 
 	} else {
-		fprintf(stderr, "Usage: compressFloat [-L|M] <floating point file> <compressed binary file>\n");
+		fprintf(stderr, "Usage: compressFloat [-L|M] <double precision floating point file> <compressed binary file>\n");
 		fprintf(stderr, "\t -L : Maximum error < 1%, Average error < 0.5%\n");
 		fprintf(stderr, "\t -M : Maximum error < 0.5%, Average error < 0.25%\n");
 		fprintf(stderr, "\t -H : Maximum error < 0.1%, Average error < 0.05%\n");
@@ -95,20 +95,20 @@ uint32_t byte_count;
 
 	elem_count = 0;
 
-	while (fread((void *) p_val, sizeof(float), 1, fp1) == 1) {
+	while (fread((void *) p_val, sizeof(double), 1, fp1) == 1) {
 		input[elem_count++] = val;
 	}
 
-	printf("Input file %s has %d floating point numbers\n", input_file, elem_count);
+	printf("Input file %s has %d double precision floating point numbers\n", input_file, elem_count);
 
-	compressed_buffer = compress_float(elem_count, accuracy,  input);
+	compressed_buffer = compress_double(elem_count, accuracy,  input);
 	if (compressed_buffer == NULL) {
 		fprintf(stderr, "Internal error: Compression failed\n");
 		exit(EXIT_FAILURE);
 	}
 
-	// Extract the length of the opaque object
-	output_size = get_compressed_length(compressed_buffer);
+    // Extract the length of the opaque object
+    output_size = get_compressed_length(compressed_buffer);
 
 	// Now flush the output buffer to fp2
 	if ((byte_count = fwrite(compressed_buffer , sizeof(uint8_t), output_size, fp2)) != output_size) {

@@ -1,10 +1,10 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
 
+#include "approximateCompression_internal.h"
 #include "bitUtils.h"
 #include "bucket.h"
 #include "uint8.h"
@@ -20,6 +20,7 @@
 
 // Compressed FP array structure
 // Size of the compressed array in bytes uint32_t
+// meta data, for example size (16/32/64), maximum err (1/0.5/0.25 etc) uint32_t
 // Number of elements N uint32_t
 // Number of batches n uint32_t
 // Repeated n times
@@ -39,8 +40,11 @@
 **
 ** In case of any error, a NULL pointer is returned
 **
-** The compression is approximate with average error of 0.5%
-** and the maximum error is guaranteed to be lower that 1%.
+** The compression is approximate and the accuracy is specified by
+** the third parameter. Possible values are ACCURACY_HALF_PERCENT,
+** ACCURACY_QUARTER_PERCENT and ACCURACY_ONE_TENTH_PERCENT. The
+** average error is 0.5% / 0.25% / 0.1% and the maximum error is 
+** guaranteed to be lower that 1% / 0.5% /0.2% respectively.
 **
 ** High level algorithm:
 **	- Divide the input floating point numbers into batches.
@@ -60,8 +64,8 @@
 **	  difference, typically encoded using 1 to 4 bits. Potentially
 **	  each batch of numbers can be encoded differently
 */
-uint8_t *
-compress_float(uint32_t elem_count, float *input)
+compressed_array
+approximate_compress(uint32_t elem_count, uint8_t precision, uint8_t accuracy, float *input)
 {
 uint8_t *bucketized_array;
 float min;
@@ -71,10 +75,11 @@ uint8_t *batch_ptr;
 uint8_t encoded_bucket[UINT16_MAX];
 uint8_t output_bucket[BLOCK_SIZE];
 uint8_t *output;
+uint8_t batch_encode_key;
 uint16_t encoded_size;
 uint16_t batch_size;
 uint16_t batch_count;
-uint8_t batch_encode_key;
+uint32_t metadata;
 uint32_t elem_processed;
 uint32_t start;
 uint32_t end;
@@ -85,6 +90,7 @@ uint32_t *p_val32;
 
 	// Compressed FP array structure
 	// Size of the compressed array in bytes uint32_t
+	// Meta data, for example size (16/32/64), maximum err (1/0.5/0.25 etc) uint32_t
 	// Number of elements N uint32_t
 	// Number of batches n uint32_t
 	// Repeated n times
@@ -94,12 +100,13 @@ uint32_t *p_val32;
 	//   Number of bytes in this batch uint16_t
 	//   Encoded bit representation for each element
 
-	// The first three elements of compressed buffer to be filled later with
-	// size of the compressed structure, number of elements and number of batches
+	// The first four elements of compressed buffer to be filled later with the size
+	// of the compressed structure, metadata, number of elements and number of batches
 
 	p_val32 = (uint32_t *) output_bucket;
 	*p_val32++ = 0; 
 	*p_val32++ = 0;
+	*p_val32++ = 0; 
 	*p_val32++ = 0; 
 
 	// batch_ptr will be used to fillup the output bucket
@@ -150,8 +157,9 @@ uint32_t *p_val32;
 
 		// Just two elements left after the last batch
 		if (batch_size == 2) {
+			// Create a mini batch of size two
 			// In this case, there will be no encoding, the
-			// two elements will be put in place of max
+			// two elements will be put in place of max and min
 			p_val16 = (uint16_t *) batch_ptr;
 			*p_val16 = 2;
 			batch_ptr = batch_ptr + sizeof(uint16_t);
@@ -165,6 +173,9 @@ uint32_t *p_val32;
 
 			break;
 		}
+
+		// RESOLVE: Do not terminate a batch due to presence of 0.0
+		// Have a special bucket for 0.0
 
 		if (input[start] == 0.0) {
 			// In this case, there will be no encoding the
@@ -182,6 +193,9 @@ uint32_t *p_val32;
 
 			continue;
 		} else if (input[start + 1] == 0.0) {
+			// Create a mini batch of size two
+			// In this case, there will be no encoding, 0.0 and the
+			// other element will be put in place of max and min
 			p_val16 = (uint16_t *) batch_ptr;
 			*p_val16 = 2;
 			batch_ptr = batch_ptr + sizeof(uint16_t);
@@ -205,6 +219,8 @@ uint32_t *p_val32;
 			min = input[start];
 		}
 
+		// RESOLVE: Change hard coded 2 to number of elements that need to be skipped
+		// to find non-zero max and min
 		for (int i = start + 2; i < elem_count; i++) {
 			// A batch can not be more than 65536
 			if (i >= start + UINT16_MAX) {
@@ -249,7 +265,8 @@ uint32_t *p_val32;
 		*p_float++ = min;
 		batch_ptr = (uint8_t *) p_float;
 
-		bucketized_array = bucketize(batch_size, input + start, max, min);
+		// RESOLVE: The parameter precision is not used by bucketize, set to zero
+		bucketized_array = bucketize(batch_size, input + start, max, min, 0, accuracy);
 		batch_encode_key = bucket_analyze(batch_size, bucketized_array);
 
 		*batch_ptr++ = batch_encode_key;
@@ -302,8 +319,14 @@ uint32_t *p_val32;
 	// floating point elements in the input array and the 
 	// number of batches 
 	
+	metadata = (precision << 3) |accuracy;
+
+	if (DEBUG)
+		printf("precision = 0x%X, accuracy = 0x%X, metadata = 0x%X\n", precision, accuracy, metadata);
+
 	p_val32 = (uint32_t *) output_bucket;
 	*p_val32++ = output_size;
+	*p_val32++ = metadata;
 	*p_val32++ = elem_count;
 	*p_val32 = batch_count;
 
@@ -313,7 +336,7 @@ uint32_t *p_val32;
 
 	memcpy(output, output_bucket, output_size);
 
-	return output;
+	return (compressed_array) output;
 }
 
 /*
@@ -337,22 +360,29 @@ uint32_t *p_val32;
 */
 
 uint8_t *
-decompress_float(uint8_t *input)
+decompress_float(compressed_array input)
 {
 uint8_t encoded_buffer[UINT16_MAX];
 uint8_t decoded_buffer[UINT16_MAX];
-float uncompressed_buffer[BLOCK_SIZE];
+uint8_t uncompressed_buffer[BLOCK_SIZE];
 float min;
 float max;
 uint16_t batch_size;
+uint32_t batch_size_in_bytes;
 uint16_t total_size;
 uint16_t encoded_buffer_size;
 uint8_t encode_key;
 uint32_t batch_count;
 uint32_t input_size;
 uint32_t elem_count;
+uint32_t metadata;
+uint8_t precision;
+uint8_t accuracy;
 uint8_t *input_ptr;
-float *output_ptr;
+uint8_t *output_ptr;
+float *output_ptr_float;
+double *output_ptr_double;
+double tmp_double;
 uint8_t *output;
 uint32_t output_size;
 uint32_t *p_val32;;
@@ -360,11 +390,12 @@ uint16_t *p_val16;;
 float *p_float;;
 int status;
 
-	input_ptr = input; // Make a copy of the input pointer
+	input_ptr = (uint8_t *)input; // Make a copy of the input pointer
 	output_ptr = uncompressed_buffer;
 
 	// Compressed FP array structure
 	// Size of the compressed array in bytes uint32_t
+	// Meta data, for example size (16/32/64), maximum err (1/0.5/0.25 etc) uint32_t
 	// Number of elements N uint32_t
 	// Number of batches n uint32_t
 	// Repeated n times
@@ -376,12 +407,34 @@ int status;
 
 	p_val32 = (uint32_t *) input_ptr;
 	input_size = *p_val32++;
+	metadata = *p_val32++;
 	elem_count = *p_val32++;
 	batch_count = *p_val32++;
 	input_ptr = (uint8_t *) p_val32;
 
-	if (VERBOSE)
-		printf("Compressed file contains %d numbers in %d batches\n", elem_count, batch_count);
+	accuracy = metadata & 0b111;
+	precision = (metadata >> 3) & 0b111;
+
+	// Validate accuracy and precision
+	if ((precision != PRECISION_SINGLE) && (precision != PRECISION_DOUBLE)) {
+		if (DEBUG)
+			printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
+		return NULL;
+	}
+
+	if ((accuracy != ACCURACY_HALF_PERCENT) && (accuracy != ACCURACY_QUARTER_PERCENT) 
+			&& (accuracy != ACCURACY_ONE_TENTH_PERCENT)) {
+		if (DEBUG)
+			printf("Internal error: %s at line %d\n", __FILE__, __LINE__);
+		return NULL;
+	}
+
+	if (DEBUG) {
+		printf("Compressed file: input_size =%d metadata = %d elem_count = %d ", 
+				input_size, metadata, elem_count);
+		printf("batch_count = %d precision = %d accuracy = %d\n", 
+				batch_count, precision, accuracy);
+	}
 
 	total_size = 0;
 
@@ -397,11 +450,31 @@ int status;
 		// Take care of the special case when the batch has
 		// Just one or two elements. Nothing to be decoded
 		if (batch_size == 1 || batch_size == 2) {
+			// Write as float or double
 			p_float = (float *) input_ptr;
-			*output_ptr++ = *p_float++;
-			if (batch_size == 2) {
-				*output_ptr++ = *p_float++;
+			if (precision == PRECISION_SINGLE) {
+				output_ptr_float = (float *) output_ptr;
+
+				*output_ptr_float++ = *p_float++;
+				if (batch_size == 2) {
+					*output_ptr_float++ = *p_float++;
+				}
+
+				output_ptr = (uint8_t *) output_ptr_float;
+			} else {
+				output_ptr_double = (double *) output_ptr;
+
+				tmp_double = *p_float++;
+				*output_ptr_double++ = tmp_double;
+
+				if (batch_size == 2) {
+					tmp_double = *p_float++;
+					*output_ptr_double++ = tmp_double;
+				}
+
+				output_ptr = (uint8_t *) output_ptr_double;
 			}
+
 			input_ptr = (uint8_t *) p_float;
 
 			// Update the number of elements processed so far
@@ -429,11 +502,14 @@ int status;
 			printf("Batch #%d encoded using encode key = %d\n", i, encode_key);
 
 		// Validate batch_size, just in case
-		if (batch_size == 0)
+		if (batch_size == 0) {
+			if (DEBUG)
+				printf("Batch #%d has size zero\n", i);
 			return NULL;
+		}
 
 		if (encode_key == 0) {
-			memcpy(encoded_buffer, input_ptr, batch_size);
+			memcpy(decoded_buffer, input_ptr, batch_size);
 			input_ptr += batch_size;
 		} else {
 			p_val16 = (uint16_t *) input_ptr;
@@ -456,28 +532,34 @@ int status;
 				return NULL;
 		}
 
-		for (int j = 0; j < batch_size; j++) {
-			output_ptr[j] = bucket_to_value(decoded_buffer[j]) * min;
-			if (DEBUG)
-				printf("%d\t%.9f\n", decoded_buffer[j], output_ptr[j]);
-		}
+		unbucketize(batch_size, decoded_buffer, (uint8_t *)output_ptr, min, precision, accuracy);
 
-		output_ptr += batch_size;
+		if (precision == PRECISION_SINGLE)
+			batch_size_in_bytes = batch_size * sizeof(float);
+		else // PRECISION_DOUBLE
+			batch_size_in_bytes = batch_size * sizeof(double);
+
+		output_ptr += batch_size_in_bytes;
 	}
 
 	// The size specified in the encoded buffer should match
 	// the number of elements found during decoding
 	if (total_size == elem_count) {
-		output_size = sizeof(uint32_t) + elem_count * sizeof(float);
-		output = malloc(output_size);
+		if (precision == PRECISION_SINGLE)
+			output_size = elem_count * sizeof(float);
+		else // PRECISION_DOUBLE
+			output_size = elem_count * sizeof(double);
+
+
+		output = malloc(output_size + sizeof(uint32_t));
 		// Quit if can not allocate memory
 		if (output == NULL)
 			return NULL;
 
 		// Copy the size followed by the float array
 		p_val32 = (uint32_t *) output;
-		*p_val32 = elem_count * sizeof(float);
-		memcpy(output + sizeof(uint32_t), uncompressed_buffer, elem_count * sizeof(float)); 
+		*p_val32 = output_size;
+		memcpy(output + sizeof(uint32_t), uncompressed_buffer, output_size);
 
 		return output;
 	} else
@@ -486,5 +568,41 @@ int status;
 			printf("mismatch in total_size (%d) and elem_count (%d)\n", total_size, elem_count);
 		return NULL;
 
+}
+
+compressed_array
+compress_float(uint32_t elem_count, uint8_t accuracy, float *input)
+{
+	return(approximate_compress(elem_count, PRECISION_SINGLE, accuracy, input));
+}
+
+compressed_array
+compress_double(uint32_t elem_count, uint8_t accuracy, double *input)
+{
+float *input2;
+
+	input2 = malloc(elem_count * sizeof(float));
+	if (input2 == NULL)
+		return NULL;
+
+	for (int i = 0; i < elem_count; i++) {
+		input2[i] = (float) input[i];
+	}
+
+	// RESOLVE: Free input2
+	return (approximate_compress(elem_count, PRECISION_DOUBLE, accuracy, input2));
+}
+
+uint32_t
+get_compressed_length(compressed_array c)
+{
+uint32_t *p;
+
+	p = (uint32_t *) c;
+
+    if (p == NULL)
+		return 0;
+
+    return(*p);
 }
 

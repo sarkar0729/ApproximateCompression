@@ -10,18 +10,18 @@
 
 /*
 ** This program reads a compressed file previously generated using
-** program compressFloat and generates approximate version of the
-** original file containing floating point numbers using the function
-** decompress_float. It is a lossy compression with an average error
-** of 0.5%. The maximum error is guaranteed to be below one percent. 
+** program compressDouble and generates approximate version of the
+** original file containing double precision floating point numbers 
+** using the function decompress_double. It is a lossy compression 
+** with an average error of 0.5%. The maximum error is guaranteed to be below one percent. 
 ** Typical size for time series data is about 6% of the original size,
-** in other words about 2 bits per floating point number (32 bit).
+** in other words about 2 bits per double precision floating point number (32 bit).
 **
-** Command to compile: gcc -std=gnu99 -o decompressFloat decompressFloatMain.c 
+** Command to compile: gcc -std=gnu99 -o decompressDouble decompressDoubleMain.c 
 **                         approximateCompression.o bitUtils.o bucket.o uint8.o
-** Usage:    ./decompressFloatMain compressed_file decompressed_file
+** Usage:    ./decompressDoubleMain compressed_file decompressed_file
 **
-** The accuracy of compression can be checked using a program compareFloat.
+** The accuracy of compression can be checked using a program compareDouble.
 */
 
 int
@@ -38,7 +38,7 @@ uint32_t batch_count;
 uint32_t elem_count;
 uint8_t val;
 uint32_t *p_val32;
-float *p_float;
+double *p_double;
 
 	if (argc != 3) {
 		fprintf(stderr, "Usage: decompressFloat <compressed binary file> <floating point file>\n");
@@ -80,19 +80,19 @@ float *p_float;
 		exit(EXIT_FAILURE);
 	}
 
-	elem_count = output_size / sizeof(float);
+	elem_count = output_size / sizeof(double);
 
 	// Skip the first four bytes before writing the
 	// floating points to the output file
 	output += sizeof(uint32_t);
-	p_float = (float *) output;
+	p_double = (double *) output;
 
-	if (fwrite((void *) p_float, sizeof(float), elem_count, fp2) != elem_count) {
+	if (fwrite((void *) p_double, sizeof(double), elem_count, fp2) != elem_count) {
 		fprintf(stderr, "Error writing output file\n");
 		exit(EXIT_FAILURE);
 	}
 
-	printf("Decompression successful, wrote %d floating point numbers to the file %s\n", elem_count, argv[2]);
+	printf("Decompression successful, wrote %d double precision floating point numbers to the file %s\n", elem_count, argv[2]);
 
 	fclose(fp1);
 	fclose(fp2);
